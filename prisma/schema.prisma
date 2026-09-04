@@ -1,0 +1,168 @@
+// Prisma Schema for LIVE-SATELLITE
+// AI-Based Detection & Classification of Industrial Fires & Persistent Thermal Sources
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         String    @default("USER") // USER, ADMIN, ANALYST
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLogin    DateTime?
+  
+  alertsAcknowledged Alert[]
+  preferences        UserAlertPreference?
+
+  @@index([email])
+}
+
+model FireEvent {
+  id                     String    @id @default(uuid())
+  latitude               Float
+  longitude              Float
+  detectionTime          DateTime
+  satellite              String    // VIIRS_SNPP, VIIRS_NOAA20, VIIRS_NOAA21, MODIS_TERRA, MODIS_AQUA
+  instrument             String    // VIIRS, MODIS
+  confidence             Float     // 0 - 100 % (or categorical nominal/high normalized to %)
+  brightnessTemp         Float     // Kelvin (e.g. 340.5 K)
+  brightnessTemp4        Float?    // Bright_ti4
+  brightnessTemp5        Float?    // Bright_ti5
+  frp                    Float     // Fire Radiative Power in MW
+  source                 String    // NASA_FIRMS_NRT, SATELLITE_ARCHIVE, USER_REPORT
+  fireType               String    // INDUSTRIAL_FIRE, FOREST_FIRE, AGRICULTURAL_BURNING, PERSISTENT_THERMAL_SOURCE, GAS_FLARE_HOTSPOT, UNKNOWN_ANOMALY
+  severity               String    // LOW, MODERATE, HIGH, CRITICAL
+  alertLevel             String    // LOW, MODERATE, HIGH, CRITICAL
+  classificationConfidence Float   @default(85.0)
+  locationName           String    // e.g. "Visakhapatnam Steel Complex, AP, India"
+  country                String    @default("India")
+  state                  String?
+  district               String?
+  industrialArea         Boolean   @default(false)
+  industrialFacilityName String?   // e.g. "Rashtriya Ispat Nigam Steel Plant"
+  facilityType           String?   // Refinery, Power Plant, Smelter, Petrochemical
+  distanceToIndustrialKm Float?    // Distance in km
+  persistenceScore       Float     @default(0.0) // 0 - 100 %
+  isPersistentSource     Boolean   @default(false)
+  scanTrack              String?
+  dayNight               String?   // D, N
+  isRealTime             Boolean   @default(true)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  alerts                 Alert[]
+
+  @@index([latitude, longitude])
+  @@index([detectionTime])
+  @@index([alertLevel])
+  @@index([fireType])
+  @@index([industrialArea])
+}
+
+model HistoricalFireEvent {
+  id                     String    @id @default(uuid())
+  latitude               Float
+  longitude              Float
+  detectionTime          DateTime
+  satellite              String
+  instrument             String
+  confidence             Float
+  brightnessTemp         Float
+  frp                    Float
+  fireType               String
+  severity               String
+  alertLevel             String
+  locationName           String
+  country                String
+  state                  String?
+  district               String?
+  industrialArea         Boolean   @default(false)
+  industrialFacilityName String?
+  durationHours          Float?
+  notes                  String?
+  createdAt              DateTime  @default(now())
+
+  @@index([latitude, longitude])
+  @@index([detectionTime])
+  @@index([fireType])
+}
+
+model PersistentThermalSource {
+  id                     String    @id @default(uuid())
+  clusterId              String    @unique
+  centroidLat            Float
+  centroidLng            Float
+  locationName           String
+  country                String    @default("India")
+  state                  String?
+  district               String?
+  detectionCount         Int       @default(1)
+  firstSeen              DateTime
+  lastSeen               DateTime
+  avgFRP                 Float
+  maxFRP                 Float
+  avgBrightnessTemp      Float
+  persistenceScore       Float     // 0 - 100 %
+  facilityType           String?   // Refinery, Gas Flare, Steel Mill, Smelter, Coal Power
+  facilityName           String?
+  status                 String    @default("ACTIVE") // ACTIVE, DORMANT, MONITORING
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([centroidLat, centroidLng])
+  @@index([persistenceScore])
+}
+
+model Alert {
+  id             String    @id @default(uuid())
+  fireEventId    String
+  fireEvent      FireEvent @relation(fields: [fireEventId], references: [id], onDelete: Cascade)
+  alertLevel     String    // LOW, MODERATE, HIGH, CRITICAL
+  title          String
+  message        String
+  acknowledged   Boolean   @default(false)
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+  user           User?     @relation(fields: [acknowledgedBy], references: [id])
+  createdAt      DateTime  @default(now())
+
+  @@index([alertLevel])
+  @@index([acknowledged])
+}
+
+model UserAlertPreference {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  criticalAlerts Boolean  @default(true)
+  highAlerts     Boolean  @default(true)
+  moderateAlerts Boolean  @default(false)
+  lowAlerts      Boolean  @default(false)
+  browserNotify  Boolean  @default(true)
+  emailNotify    Boolean  @default(false)
+  targetRegion   String   @default("All Regions")
+  minFRP         Float    @default(10.0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model SystemLog {
+  id        String   @id @default(uuid())
+  level     String   // INFO, WARN, ERROR, SUCCESS
+  source    String   // NASA_FIRMS, OVERPASS_OSM, AI_CLASSIFIER, AUTH, CRON
+  message   String
+  metadata  String?  // JSON string
+  timestamp DateTime @default(now())
+
+  @@index([timestamp])
+  @@index([source])
+}
